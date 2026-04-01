@@ -13,7 +13,6 @@ export function HomePage() {
   const books = useAppStore((s) => s.books);
   const loading = useAppStore((s) => s.loading);
   const [activeBookIndex, setActiveBookIndex] = useState<number | null>(null);
-  const [currentPage, setCurrentPage] = useState(0);
   const [showOverlay, setShowOverlay] = useState(false);
 
   const activeBook = activeBookIndex !== null ? books[activeBookIndex] : null;
@@ -24,19 +23,13 @@ export function HomePage() {
         setShowOverlay(true);
       } else {
         setActiveBookIndex(index);
-        setCurrentPage(0);
       }
     },
     [activeBookIndex]
   );
 
-  const handlePageChange = useCallback((page: number) => {
-    setCurrentPage(page);
-  }, []);
-
   const handleCloseBook = useCallback(() => {
     setActiveBookIndex(null);
-    setCurrentPage(0);
   }, []);
 
   const handleCloseOverlay = useCallback(() => {
@@ -46,7 +39,6 @@ export function HomePage() {
   const handlePrevBook = useCallback(() => {
     setActiveBookIndex((prev) => {
       if (prev === null || prev === 0) return prev;
-      setCurrentPage(0);
       return prev - 1;
     });
   }, []);
@@ -54,7 +46,6 @@ export function HomePage() {
   const handleNextBook = useCallback(() => {
     setActiveBookIndex((prev) => {
       if (prev === null || prev >= books.length - 1) return prev;
-      setCurrentPage(0);
       return prev + 1;
     });
   }, [books.length]);
@@ -82,8 +73,6 @@ export function HomePage() {
             books={books}
             activeBookIndex={activeBookIndex}
             onSelectBook={handleSelectBook}
-            currentPage={currentPage}
-            onPageChange={handlePageChange}
           />
         )}
       </Suspense>
@@ -108,7 +97,7 @@ export function HomePage() {
           </Link>
         </div>
 
-        {/* Book navigation when a book is active */}
+        {/* Book info panel */}
         <AnimatePresence>
           {activeBook && !showOverlay && (
             <motion.div
@@ -119,14 +108,13 @@ export function HomePage() {
               transition={{ type: "spring", damping: 25 }}
             >
               <div className="mx-auto max-w-xl px-4 pb-8">
-                {/* Book info card */}
                 <div className="rounded-2xl bg-white/90 p-5 shadow-lg backdrop-blur-md">
                   <div className="flex items-start justify-between">
                     <div className="min-w-0 flex-1">
                       <p className="text-[10px] uppercase tracking-widest text-ink-faint">
                         {activeBook.type === "wiki"
                           ? "Wikipedia"
-                          : "Friend's message"}
+                          : "Friend\u2019s message"}
                       </p>
                       <h2 className="mt-1 truncate font-serif text-lg font-bold text-ink">
                         {activeBook.title}
@@ -138,41 +126,28 @@ export function HomePage() {
                     <button
                       onClick={handleCloseBook}
                       className="ml-3 rounded-full p-1.5 text-ink-faint transition-colors hover:bg-paper-warm hover:text-ink"
-                      aria-label="Close book"
+                      aria-label="Close"
                     >
-                      <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2">
+                      <svg
+                        width="16"
+                        height="16"
+                        viewBox="0 0 16 16"
+                        fill="none"
+                        stroke="currentColor"
+                        strokeWidth="2"
+                      >
                         <path d="M4 4l8 8M12 4L4 12" />
                       </svg>
                     </button>
                   </div>
 
-                  {/* Page navigation */}
-                  <div className="mt-3 flex items-center gap-3">
-                    <button
-                      onClick={() => handlePageChange(Math.max(0, currentPage - 1))}
-                      disabled={currentPage === 0}
-                      className="rounded-lg bg-paper-warm px-3 py-1.5 text-xs font-medium text-ink transition-colors hover:bg-paper-deep disabled:opacity-30"
-                    >
-                      &larr; Prev
-                    </button>
-                    <div className="flex-1 text-center text-xs text-ink-faint">
-                      Click the book to turn pages
-                    </div>
-                    <button
-                      onClick={() => handlePageChange(currentPage + 1)}
-                      className="rounded-lg bg-paper-warm px-3 py-1.5 text-xs font-medium text-ink transition-colors hover:bg-paper-deep"
-                    >
-                      Next &rarr;
-                    </button>
-                  </div>
-
-                  {/* Read full + browse controls */}
-                  <div className="mt-3 flex gap-2">
+                  {/* Actions */}
+                  <div className="mt-4 flex gap-2">
                     <button
                       onClick={() => setShowOverlay(true)}
-                      className="flex-1 rounded-lg bg-ink px-4 py-2 text-sm font-medium text-paper transition-colors hover:bg-ink/90"
+                      className="flex-1 rounded-lg bg-ink px-4 py-2.5 text-sm font-medium text-paper transition-colors hover:bg-ink/90"
                     >
-                      Read Full Article
+                      Read This Book
                     </button>
                     <button
                       onClick={handlePrevBook}
@@ -180,17 +155,34 @@ export function HomePage() {
                       className="rounded-lg bg-paper-warm px-3 py-2 text-ink transition-colors hover:bg-paper-deep disabled:opacity-30"
                       aria-label="Previous book"
                     >
-                      <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="2">
+                      <svg
+                        width="14"
+                        height="14"
+                        viewBox="0 0 14 14"
+                        fill="none"
+                        stroke="currentColor"
+                        strokeWidth="2"
+                      >
                         <path d="M9 3L5 7l4 4" />
                       </svg>
                     </button>
                     <button
                       onClick={handleNextBook}
-                      disabled={activeBookIndex !== null && activeBookIndex >= books.length - 1}
+                      disabled={
+                        activeBookIndex !== null &&
+                        activeBookIndex >= books.length - 1
+                      }
                       className="rounded-lg bg-paper-warm px-3 py-2 text-ink transition-colors hover:bg-paper-deep disabled:opacity-30"
                       aria-label="Next book"
                     >
-                      <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="2">
+                      <svg
+                        width="14"
+                        height="14"
+                        viewBox="0 0 14 14"
+                        fill="none"
+                        stroke="currentColor"
+                        strokeWidth="2"
+                      >
                         <path d="M5 3l4 4-4 4" />
                       </svg>
                     </button>
@@ -201,7 +193,7 @@ export function HomePage() {
           )}
         </AnimatePresence>
 
-        {/* Instruction hint when no book is selected */}
+        {/* Hint */}
         <AnimatePresence>
           {!activeBook && books.length > 0 && (
             <motion.div
@@ -236,7 +228,7 @@ export function HomePage() {
         )}
       </div>
 
-      {/* Book reading overlay (Pretext-powered) */}
+      {/* Book reading overlay */}
       <AnimatePresence>
         {showOverlay && activeBook && (
           <BookOpenOverlay book={activeBook} onClose={handleCloseOverlay} />

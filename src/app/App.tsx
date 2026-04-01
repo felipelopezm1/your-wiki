@@ -6,7 +6,6 @@ import { SubmitPage } from "./routes/SubmitPage";
 import { BookPage } from "./routes/BookPage";
 import { useAppStore } from "@/store/useAppStore";
 import { MOCK_BOOKS } from "@/lib/mockData";
-import { fetchAndSeedWikiBooks } from "@/lib/wikipedia/wikipedia";
 import type { BookEntry } from "@/types";
 
 async function fetchBooks(): Promise<BookEntry[] | null> {
@@ -44,18 +43,9 @@ export function App() {
         return;
       }
 
-      // Fallback: use mock data + live Wikipedia fetch
+      // Fallback: use mock data
       setBooks(MOCK_BOOKS);
       setLoading(false);
-
-      // Enrich with live Wikipedia articles in background
-      const wikiBooks = await fetchAndSeedWikiBooks();
-      if (cancelled || wikiBooks.length === 0) return;
-      setBooks((prev: BookEntry[]) => {
-        const existing = new Set(prev.map((b) => b.id));
-        const newBooks = wikiBooks.filter((b) => !existing.has(b.id));
-        return [...prev, ...newBooks];
-      });
     })();
 
     return () => {
