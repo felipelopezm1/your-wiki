@@ -12,6 +12,7 @@ interface AppState {
   loading: boolean;
   error: string | null;
   currentLayoutMode: LayoutMode;
+  effectsEnabled: boolean;
 
   setBooks: (books: BookEntry[] | ((prev: BookEntry[]) => BookEntry[])) => void;
   addBook: (book: BookEntry) => void;
@@ -22,6 +23,7 @@ interface AppState {
   setLoading: (loading: boolean) => void;
   setError: (error: string | null) => void;
   setLayoutMode: (mode: LayoutMode) => void;
+  setEffectsEnabled: (enabled: boolean) => void;
 }
 
 export const useAppStore = create<AppState>((set) => ({
@@ -33,6 +35,7 @@ export const useAppStore = create<AppState>((set) => ({
   loading: false,
   error: null,
   currentLayoutMode: "shelf",
+  effectsEnabled: true,
 
   setBooks: (books) =>
     set((s) => ({
@@ -48,4 +51,5 @@ export const useAppStore = create<AppState>((set) => ({
   setLoading: (loading) => set({ loading }),
   setError: (error) => set({ error }),
   setLayoutMode: (mode) => set({ currentLayoutMode: mode }),
+  setEffectsEnabled: (enabled) => set({ effectsEnabled: enabled }),
 }));
