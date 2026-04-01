@@ -1,14 +1,15 @@
 import { BrowserRouter, Routes, Route } from "react-router";
 import { useEffect } from "react";
-import { Shell } from "@/components/layout/Shell";
 import { HoloLightbox } from "@/components/media/HoloLightbox";
 import { HomePage } from "./routes/HomePage";
 import { SubmitPage } from "./routes/SubmitPage";
 import { BookPage } from "./routes/BookPage";
 import { useAppStore } from "@/store/useAppStore";
 import { MOCK_BOOKS } from "@/lib/mockData";
+import { fetchAndSeedWikiBooks } from "@/lib/wikipedia/wikipedia";
+import type { BookEntry } from "@/types";
 
-async function fetchBooks() {
+async function fetchBooks(): Promise<BookEntry[] | null> {
   try {
     const res = await fetch("/api/books");
     if (!res.ok) throw new Error("API not available");
@@ -19,7 +20,7 @@ async function fetchBooks() {
       );
     }
   } catch {
-    // API not available (local dev without Vercel, or no Redis yet)
+    // API not available
   }
   return null;
 }
@@ -31,11 +32,32 @@ export function App() {
   useEffect(() => {
     let cancelled = false;
     setLoading(true);
-    fetchBooks().then((books) => {
+
+    (async () => {
+      // Try API first
+      const apiBooks = await fetchBooks();
       if (cancelled) return;
-      setBooks(books ?? MOCK_BOOKS);
+
+      if (apiBooks && apiBooks.length > 0) {
+        setBooks(apiBooks);
+        setLoading(false);
+        return;
+      }
+
+      // Fallback: use mock data + live Wikipedia fetch
+      setBooks(MOCK_BOOKS);
       setLoading(false);
-    });
+
+      // Enrich with live Wikipedia articles in background
+      const wikiBooks = await fetchAndSeedWikiBooks();
+      if (cancelled || wikiBooks.length === 0) return;
+      setBooks((prev: BookEntry[]) => {
+        const existing = new Set(prev.map((b) => b.id));
+        const newBooks = wikiBooks.filter((b) => !existing.has(b.id));
+        return [...prev, ...newBooks];
+      });
+    })();
+
     return () => {
       cancelled = true;
     };
@@ -43,13 +65,25 @@ export function App() {
 
   return (
     <BrowserRouter>
-      <Shell>
-        <Routes>
-          <Route path="/" element={<HomePage />} />
-          <Route path="/submit" element={<SubmitPage />} />
-          <Route path="/book/:id" element={<BookPage />} />
-        </Routes>
-      </Shell>
+      <Routes>
+        <Route path="/" element={<HomePage />} />
+        <Route
+          path="/submit"
+          element={
+            <div className="min-h-screen bg-paper paper-texture">
+              <SubmitPage />
+            </div>
+          }
+        />
+        <Route
+          path="/book/:id"
+          element={
+            <div className="min-h-screen bg-paper paper-texture">
+              <BookPage />
+            </div>
+          }
+        />
+      </Routes>
       <HoloLightbox />
     </BrowserRouter>
   );

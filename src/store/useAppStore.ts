@@ -13,7 +13,7 @@ interface AppState {
   error: string | null;
   currentLayoutMode: LayoutMode;
 
-  setBooks: (books: BookEntry[]) => void;
+  setBooks: (books: BookEntry[] | ((prev: BookEntry[]) => BookEntry[])) => void;
   addBook: (book: BookEntry) => void;
   selectBook: (id: string | null) => void;
   setBookOpen: (open: boolean) => void;
@@ -34,7 +34,10 @@ export const useAppStore = create<AppState>((set) => ({
   error: null,
   currentLayoutMode: "shelf",
 
-  setBooks: (books) => set({ books }),
+  setBooks: (books) =>
+    set((s) => ({
+      books: typeof books === "function" ? books(s.books) : books,
+    })),
   addBook: (book) => set((s) => ({ books: [...s.books, book] })),
   selectBook: (id) =>
     set({ selectedBookId: id, currentLayoutMode: id ? "open" : "shelf" }),
