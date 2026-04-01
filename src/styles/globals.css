@@ -1,0 +1,56 @@
+@import "tailwindcss";
+
+@theme {
+  --color-paper: #FEFCF9;
+  --color-paper-warm: #F8F5EF;
+  --color-paper-deep: #F0ECE4;
+  --color-ink: #1A1A1A;
+  --color-ink-light: #6B6560;
+  --color-ink-faint: #A8A29E;
+  --color-border: #E8E4DF;
+  --color-border-light: #F0ECE6;
+  --color-accent: #8B7355;
+  --color-accent-warm: #C4956A;
+  --color-shadow: rgba(0, 0, 0, 0.06);
+  --color-shadow-deep: rgba(0, 0, 0, 0.12);
+
+  --font-serif: "Merriweather", Georgia, serif;
+  --font-sans: "Inter", system-ui, sans-serif;
+}
+
+html {
+  font-family: var(--font-sans);
+  color: var(--color-ink);
+  background-color: var(--color-paper);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+body {
+  margin: 0;
+  min-height: 100vh;
+}
+
+::selection {
+  background-color: var(--color-accent-warm);
+  color: white;
+}
+
+@utility paper-card {
+  background-color: white;
+  border: 1px solid var(--color-border);
+  border-radius: 0.75rem;
+  box-shadow: 0 1px 3px var(--color-shadow), 0 1px 2px var(--color-shadow);
+}
+
+@utility paper-texture {
+  background-image: url("data:image/svg+xml,%3Csvg width='100' height='100' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noise'%3E%3CfeTurbulence baseFrequency='0.65' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noise)' opacity='0.015'/%3E%3C/svg%3E");
+}
+
+@media (prefers-reduced-motion: reduce) {
+  * {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
