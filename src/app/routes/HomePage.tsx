@@ -65,10 +65,10 @@ export function HomePage() {
           <div className="pointer-events-auto flex items-center justify-between px-6 py-4">
             <div>
               <h1 className="font-serif text-xl font-bold text-ink/80 drop-shadow-sm">
-                Weeeeki
+                Ceci&apos;s Library
               </h1>
               <p className="text-xs text-ink-light/60">
-                A digital library for Ceci
+                Con todo el amor y cariño para ti
               </p>
             </div>
             <Link
