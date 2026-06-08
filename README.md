@@ -1,6 +1,6 @@
 # Weeeeki
 
-A digital keepsake library for Ceci. Friends can leave messages that appear as beautiful 3D books in an editorial-style interface.
+A digital keepsake library. Friends can leave messages that appear as beautiful 3D books in an editorial-style interface.
 
 ## Tech Stack
 

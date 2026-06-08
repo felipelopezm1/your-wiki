@@ -1,11 +1,13 @@
-import { useState, type FormEvent } from "react";
+import { useEffect, useState, type FormEvent } from "react";
+import { Link } from "react-router";
 import { motion, AnimatePresence } from "framer-motion";
 import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
 import { ImageUploader } from "./ImageUploader";
 import { useAppStore } from "@/store/useAppStore";
-import type { BookEntry, CoverTheme } from "@/types";
+import type { BookEntry, CoverTheme, GalleryImage } from "@/types";
 import { COVER_THEMES } from "@/types";
+import { saveEditToken } from "@/lib/ownership";
 import { cn } from "@/lib/utils/cn";
 
 async function uploadImage(file: File): Promise<string> {
@@ -18,21 +20,100 @@ async function uploadImage(file: File): Promise<string> {
   return data.url;
 }
 
-export function SubmissionForm() {
+function compressImage(file: File, maxSize = 720, quality = 0.72): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onerror = () => reject(new Error("Could not read image"));
+    reader.onload = () => {
+      const img = new Image();
+      img.onerror = () => reject(new Error("Could not load image"));
+      img.onload = () => {
+        const scale = Math.min(1, maxSize / Math.max(img.width, img.height));
+        const canvas = document.createElement("canvas");
+        canvas.width = Math.round(img.width * scale);
+        canvas.height = Math.round(img.height * scale);
+
+        const ctx = canvas.getContext("2d");
+        if (!ctx) {
+          reject(new Error("Could not process image"));
+          return;
+        }
+
+        ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+        resolve(canvas.toDataURL("image/jpeg", quality));
+      };
+      img.src = String(reader.result);
+    };
+    reader.readAsDataURL(file);
+  });
+}
+
+function readImage(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onerror = () => reject(new Error("Could not read image"));
+    reader.onload = () => resolve(String(reader.result));
+    reader.readAsDataURL(file);
+  });
+}
+
+function getImageAspect(file: File): Promise<"portrait" | "landscape"> {
+  return new Promise((resolve) => {
+    const reader = new FileReader();
+    reader.onerror = () => resolve("landscape");
+    reader.onload = () => {
+      const img = new Image();
+      img.onerror = () => resolve("landscape");
+      img.onload = () => resolve(img.height > img.width ? "portrait" : "landscape");
+      img.src = String(reader.result);
+    };
+    reader.readAsDataURL(file);
+  });
+}
+
+function galleryThumb(image: string | GalleryImage): string {
+  return typeof image === "string" ? image : image.thumbnailUrl ?? image.url;
+}
+
+interface SubmissionFormProps {
+  editBook?: BookEntry;
+  editToken?: string;
+  onSaved?: (book: BookEntry) => void;
+}
+
+export function SubmissionForm({ editBook, editToken, onSaved }: SubmissionFormProps) {
+  const isEdit = Boolean(editBook);
   const addBook = useAppStore((s) => s.addBook);
-  const [name, setName] = useState("");
-  const [title, setTitle] = useState("");
-  const [message, setMessage] = useState("");
-  const [coverTheme, setCoverTheme] = useState<CoverTheme>("cream");
+  const setBooks = useAppStore((s) => s.setBooks);
+
+  const [name, setName] = useState(editBook?.senderName ?? editBook?.authorLabel ?? "");
+  const [title, setTitle] = useState(editBook?.title ?? "");
+  const [message, setMessage] = useState(
+    editBook?.senderMessage ?? (editBook?.type === "friend" ? editBook?.body ?? "" : ""),
+  );
+  const [wikiUrl, setWikiUrl] = useState(
+    editBook?.type === "wiki" ? editBook?.sourceUrl ?? "" : "",
+  );
+  const [coverTheme, setCoverTheme] = useState<CoverTheme>(
+    (editBook?.coverTheme as CoverTheme) ?? "cream",
+  );
   const [avatarFile, setAvatarFile] = useState<File | null>(null);
+  const [existingAvatar, setExistingAvatar] = useState<string | undefined>(editBook?.avatarUrl);
+  const [existingGallery, setExistingGallery] = useState<Array<string | GalleryImage>>(
+    editBook?.galleryImages ?? [],
+  );
+  const [galleryFiles, setGalleryFiles] = useState<File[]>([]);
   const [status, setStatus] = useState<"idle" | "submitting" | "success" | "error">("idle");
   const [errorMsg, setErrorMsg] = useState("");
+  const [savedBookId, setSavedBookId] = useState<string | null>(null);
 
   const errors = {
     name: status === "error" && !name ? "Name is required" : undefined,
     title: status === "error" && !title ? "Title is required" : undefined,
     message: status === "error" && !message ? "Message is required" : undefined,
   };
+
+  const remainingGallerySlots = Math.max(0, 8 - existingGallery.length);
 
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();
@@ -48,7 +129,56 @@ export function SubmissionForm() {
     try {
       let avatarUrl: string | undefined;
       if (avatarFile) {
-        avatarUrl = await uploadImage(avatarFile);
+        try {
+          avatarUrl = await uploadImage(avatarFile);
+        } catch {
+          avatarUrl = await readImage(avatarFile);
+        }
+      } else if (isEdit) {
+        avatarUrl = existingAvatar ?? "";
+      }
+
+      const newGalleryImages = await Promise.all(
+        galleryFiles.slice(0, remainingGallerySlots).map(async (file) => {
+          const aspect = await getImageAspect(file);
+          const thumbnailUrl = await compressImage(file, 640, 0.68);
+          try {
+            return { url: await uploadImage(file), thumbnailUrl, aspect };
+          } catch {
+            return { url: await readImage(file), thumbnailUrl, aspect };
+          }
+        }),
+      );
+
+      const galleryImages = [...existingGallery, ...newGalleryImages].slice(0, 8);
+
+      if (isEdit && editBook) {
+        const res = await fetch(`/api/books?id=${encodeURIComponent(editBook.id)}`, {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            editToken,
+            contributorName: name,
+            title,
+            messageBody: message,
+            wikiUrl: wikiUrl.trim() || undefined,
+            coverTheme,
+            avatarUrl,
+            galleryImages,
+          }),
+        });
+
+        if (!res.ok) {
+          const data = await res.json();
+          throw new Error(data.error || "Could not save changes");
+        }
+
+        const { book } = (await res.json()) as { book: BookEntry };
+        setBooks((prev) => prev.map((b) => (b.id === book.id ? book : b)));
+        setSavedBookId(book.id);
+        setStatus("success");
+        onSaved?.(book);
+        return;
       }
 
       const res = await fetch("/api/books", {
@@ -58,8 +188,10 @@ export function SubmissionForm() {
           contributorName: name,
           title,
           messageBody: message,
+          wikiUrl: wikiUrl.trim() || undefined,
           coverTheme,
           avatarUrl,
+          galleryImages,
         }),
       });
 
@@ -69,7 +201,9 @@ export function SubmissionForm() {
       }
 
       const { book } = (await res.json()) as { book: BookEntry };
+      if (book.editToken) saveEditToken(book.id, book.editToken);
       addBook(book);
+      setSavedBookId(book.id);
       setStatus("success");
     } catch (err) {
       setErrorMsg(err instanceof Error ? err.message : "Something went wrong");
@@ -86,22 +220,50 @@ export function SubmissionForm() {
       >
         <div className="text-4xl mb-4">&#10003;</div>
         <h3 className="font-serif text-xl font-bold text-ink">
-          Message received!
+          {isEdit ? "Changes saved!" : "Message received!"}
         </h3>
         <p className="mt-2 text-sm text-ink-light">
-          Your book has been added to the library.
+          {isEdit
+            ? "Your entry has been updated."
+            : "Your book has been added to the library."}
         </p>
-        <Button
-          className="mt-6"
-          onClick={() => {
-            setStatus("idle");
-            setName("");
-            setTitle("");
-            setMessage("");
-          }}
-        >
-          Write another
-        </Button>
+
+        {!isEdit && savedBookId && (
+          <p className="mt-4 text-xs text-ink-faint">
+            Want to change it later? You can{" "}
+            <Link
+              to={`/submit?edit=${savedBookId}`}
+              className="text-accent underline hover:text-accent-warm"
+            >
+              edit this entry
+            </Link>{" "}
+            from this browser anytime.
+          </p>
+        )}
+
+        <div className="mt-6 flex flex-col gap-3 sm:flex-row sm:justify-center">
+          <Link to="/">
+            <Button variant="secondary">Back to Library</Button>
+          </Link>
+          {!isEdit && (
+            <Button
+              onClick={() => {
+                setStatus("idle");
+                setName("");
+                setTitle("");
+                setMessage("");
+                setWikiUrl("");
+                setGalleryFiles([]);
+                setExistingGallery([]);
+                setAvatarFile(null);
+                setExistingAvatar(undefined);
+                setSavedBookId(null);
+              }}
+            >
+              Write another
+            </Button>
+          )}
+        </div>
       </motion.div>
     );
   }
@@ -132,12 +294,12 @@ export function SubmissionForm() {
         </label>
         <textarea
           id="message"
-          rows={5}
+          rows={8}
           placeholder="Write something heartfelt..."
           value={message}
           onChange={(e) => setMessage(e.target.value)}
           className={cn(
-            "rounded-lg border border-border bg-white px-4 py-2.5 text-sm text-ink placeholder:text-ink-faint transition-colors duration-200 outline-none focus:border-accent focus:ring-1 focus:ring-accent/30 resize-y font-serif",
+            "min-h-48 rounded-lg border border-border bg-white px-4 py-3 font-serif text-base leading-7 text-ink placeholder:text-ink-faint transition-colors duration-200 outline-none focus:border-accent focus:ring-1 focus:ring-accent/30 resize-y",
             errors.message && "border-red-400",
           )}
         />
@@ -146,10 +308,83 @@ export function SubmissionForm() {
         )}
       </div>
 
-      <ImageUploader
-        label="Profile picture (optional)"
-        onImageSelected={(file) => setAvatarFile(file)}
+      <Input
+        id="wikiUrl"
+        label="Wikipedia article link (optional)"
+        placeholder="https://en.wikipedia.org/wiki/Friendship"
+        value={wikiUrl}
+        onChange={(e) => setWikiUrl(e.target.value)}
       />
+
+      {/* Profile picture */}
+      {existingAvatar && !avatarFile ? (
+        <div>
+          <p className="text-sm font-medium text-ink-light mb-1.5">Profile picture</p>
+          <div className="relative inline-block">
+            <img
+              src={existingAvatar}
+              alt="Current profile"
+              className="h-24 w-24 rounded-lg object-cover border border-border"
+            />
+            <button
+              type="button"
+              onClick={() => setExistingAvatar(undefined)}
+              className="absolute -top-2 -right-2 flex h-5 w-5 items-center justify-center rounded-full bg-ink text-white text-xs"
+              aria-label="Remove profile picture"
+            >
+              &times;
+            </button>
+          </div>
+        </div>
+      ) : (
+        <ImageUploader
+          label={isEdit ? "Replace profile picture (optional)" : "Profile picture (optional)"}
+          onImageSelected={(file) => setAvatarFile(file)}
+        />
+      )}
+
+      {/* Existing gallery images (edit mode) */}
+      {existingGallery.length > 0 && (
+        <div>
+          <p className="text-sm font-medium text-ink-light mb-1.5">
+            Current images in the book
+          </p>
+          <div className="grid grid-cols-4 gap-2">
+            {existingGallery.map((image, index) => (
+              <div key={`${galleryThumb(image)}-${index}`} className="relative">
+                <img
+                  src={galleryThumb(image)}
+                  alt={`Current image ${index + 1}`}
+                  className="h-20 w-full rounded-lg border border-border object-cover"
+                />
+                <button
+                  type="button"
+                  onClick={() =>
+                    setExistingGallery(existingGallery.filter((_, i) => i !== index))
+                  }
+                  className="absolute -right-1.5 -top-1.5 flex h-5 w-5 items-center justify-center rounded-full bg-ink text-xs text-white"
+                  aria-label={`Remove current image ${index + 1}`}
+                >
+                  &times;
+                </button>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {remainingGallerySlots > 0 && (
+        <GalleryUploader
+          label={
+            isEdit
+              ? `Add more images (${remainingGallerySlots} slot${remainingGallerySlots === 1 ? "" : "s"} left)`
+              : "Images to place inside the book (up to 8)"
+          }
+          files={galleryFiles}
+          onChange={setGalleryFiles}
+          maxFiles={remainingGallerySlots}
+        />
+      )}
 
       {/* Cover theme selector */}
       <div>
@@ -194,8 +429,78 @@ export function SubmissionForm() {
         className="w-full"
         disabled={status === "submitting"}
       >
-        {status === "submitting" ? "Sending..." : "Leave your message"}
+        {status === "submitting"
+          ? isEdit
+            ? "Saving..."
+            : "Sending..."
+          : isEdit
+            ? "Save changes"
+            : "Leave your message"}
       </Button>
     </form>
+  );
+}
+
+function GalleryUploader({
+  label,
+  files,
+  onChange,
+  maxFiles = 8,
+}: {
+  label: string;
+  files: File[];
+  onChange: (files: File[]) => void;
+  maxFiles?: number;
+}) {
+  const [previews, setPreviews] = useState<string[]>([]);
+
+  useEffect(() => {
+    const urls = files.map((file) => URL.createObjectURL(file));
+    setPreviews(urls);
+    return () => urls.forEach((url) => URL.revokeObjectURL(url));
+  }, [files]);
+
+  return (
+    <div>
+      <p className="text-sm font-medium text-ink-light mb-1.5">{label}</p>
+      <label className="flex min-h-28 cursor-pointer items-center justify-center rounded-lg border-2 border-dashed border-border px-4 py-4 text-center transition-colors hover:border-ink-faint">
+        <input
+          type="file"
+          accept="image/*"
+          multiple
+          className="sr-only"
+          onChange={(e) => {
+            const next = Array.from(e.target.files ?? []).slice(0, maxFiles);
+            onChange(next);
+            e.currentTarget.value = "";
+          }}
+        />
+        <span className="text-xs text-ink-faint">
+          Click to choose up to {maxFiles} image{maxFiles === 1 ? "" : "s"}
+        </span>
+      </label>
+
+      {previews.length > 0 && (
+        <div className="mt-3 grid grid-cols-4 gap-2">
+          {previews.map((preview, index) => (
+            <div key={preview} className="relative">
+              <img
+                src={preview}
+                alt={`Book insert preview ${index + 1}`}
+                className="h-20 w-full rounded-lg border border-border object-cover"
+              />
+              <button
+                type="button"
+                onClick={() => onChange(files.filter((_, i) => i !== index))}
+                className="absolute -right-1.5 -top-1.5 flex h-5 w-5 items-center justify-center rounded-full bg-ink text-xs text-white"
+                aria-label={`Remove image ${index + 1}`}
+              >
+                &times;
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
   );
 }

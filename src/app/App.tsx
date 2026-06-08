@@ -5,15 +5,14 @@ import { HomePage } from "./routes/HomePage";
 import { SubmitPage } from "./routes/SubmitPage";
 import { BookPage } from "./routes/BookPage";
 import { useAppStore } from "@/store/useAppStore";
-import { MOCK_BOOKS } from "@/lib/mockData";
 import type { BookEntry } from "@/types";
 
-async function fetchBooks(): Promise<BookEntry[] | null> {
+async function fetchBooks(): Promise<BookEntry[]> {
   try {
     const res = await fetch("/api/books");
     if (!res.ok) throw new Error("API not available");
     const data = await res.json();
-    if (data.books && data.books.length > 0) {
+    if (Array.isArray(data.books)) {
       return data.books.map((b: unknown) =>
         typeof b === "string" ? JSON.parse(b) : b,
       );
@@ -21,7 +20,7 @@ async function fetchBooks(): Promise<BookEntry[] | null> {
   } catch {
     // API not available
   }
-  return null;
+  return [];
 }
 
 export function App() {
@@ -37,14 +36,7 @@ export function App() {
       const apiBooks = await fetchBooks();
       if (cancelled) return;
 
-      if (apiBooks && apiBooks.length > 0) {
-        setBooks(apiBooks);
-        setLoading(false);
-        return;
-      }
-
-      // Fallback: use mock data
-      setBooks(MOCK_BOOKS);
+      setBooks(apiBooks);
       setLoading(false);
     })();
 

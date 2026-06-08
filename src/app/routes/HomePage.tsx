@@ -1,9 +1,11 @@
-import { useState, useCallback, Suspense, lazy } from "react";
+import { useState, useCallback, useEffect, Suspense, lazy } from "react";
 import { Link } from "react-router";
 import { AnimatePresence } from "framer-motion";
 import { useAppStore } from "@/store/useAppStore";
 import { LoadingState } from "@/components/ui/LoadingState";
 import { BookReader } from "@/components/book/BookReader";
+import { BookLockGate } from "@/components/book/BookLockGate";
+import { isBookLocked, isBookUnlocked } from "@/lib/bookLock";
 
 const Library3D = lazy(() =>
   import("@/components/book/Library3D").then((m) => ({ default: m.Library3D }))
@@ -13,8 +15,18 @@ export function HomePage() {
   const books = useAppStore((s) => s.books);
   const loading = useAppStore((s) => s.loading);
   const [readingBookIndex, setReadingBookIndex] = useState<number | null>(null);
+  const [sessionUnlocked, setSessionUnlocked] = useState(false);
 
   const readingBook = readingBookIndex !== null ? books[readingBookIndex] : null;
+  const needsLock =
+    readingBook &&
+    isBookLocked(readingBook) &&
+    !isBookUnlocked(readingBook.id) &&
+    !sessionUnlocked;
+
+  useEffect(() => {
+    setSessionUnlocked(false);
+  }, [readingBookIndex]);
 
   const handleSelectBook = useCallback((index: number) => {
     setReadingBookIndex(index);
@@ -68,7 +80,7 @@ export function HomePage() {
           </div>
 
           {books.length > 0 && (
-            <div className="pointer-events-none absolute bottom-8 left-0 right-0 text-center">
+            <div className="pointer-events-none absolute bottom-6 left-0 right-0 text-center">
               <p className="text-sm text-ink-light/50 drop-shadow-sm">
                 Hover to pull out a book &middot; Click to read
               </p>
@@ -93,10 +105,18 @@ export function HomePage() {
         </div>
       )}
 
-      {/* Full-screen Book Reader */}
+      {/* Password gate + full-screen Book Reader */}
       <AnimatePresence>
-        {readingBook && (
-          <BookReader book={readingBook} onClose={handleCloseBook} />
+        {readingBook && needsLock && (
+          <BookLockGate
+            key={`lock-${readingBook.id}`}
+            book={readingBook}
+            onUnlock={() => setSessionUnlocked(true)}
+            onClose={handleCloseBook}
+          />
+        )}
+        {readingBook && !needsLock && (
+          <BookReader key={`reader-${readingBook.id}`} book={readingBook} onClose={handleCloseBook} />
         )}
       </AnimatePresence>
     </div>

@@ -139,24 +139,29 @@ export function PretextBlock({
   return (
     <div
       ref={containerRef}
-      className={`relative select-text cursor-default ${className}`}
-      style={{ height: containerHeight || "auto", lineHeight: `${lineHeight}px` }}
+      className={`relative select-text ${className}`}
+      style={{
+        height: containerHeight || "auto",
+        minHeight: containerHeight || 40,
+        lineHeight: `${lineHeight}px`,
+        cursor: effectsEnabled ? "crosshair" : "default",
+      }}
       onMouseMove={handleMouseMove}
       onMouseLeave={handleMouseLeave}
+      onPointerMove={handleMouseMove as unknown as React.PointerEventHandler}
     >
       {chars.map((cd, i) => (
         <span
           key={`${cd.lineIndex}-${cd.charIndex}`}
           ref={(el) => { charEls.current[i] = el; }}
-          className="absolute will-change-transform"
+          className="absolute will-change-transform pointer-events-none"
           style={{
             left: cd.x,
             top: cd.y,
             height: lineHeight,
             lineHeight: `${lineHeight}px`,
             display: "inline-block",
-            fontFamily: '"Merriweather", Georgia, serif',
-            fontSize: "16px",
+            font,
             whiteSpace: "pre",
             transition: "none",
           }}

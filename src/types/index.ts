@@ -23,6 +23,12 @@ export const REACTION_STYLES: ReactionStyleName[] = [
   "heartbeat-shift",
 ];
 
+export interface GalleryImage {
+  url: string;
+  thumbnailUrl?: string;
+  aspect?: "portrait" | "landscape";
+}
+
 export interface BookEntry {
   id: string;
   type: "friend" | "wiki";
@@ -35,9 +41,14 @@ export interface BookEntry {
   sourceLabel?: string;
   sourceUrl?: string;
   images: string[];
+  galleryImages?: Array<string | GalleryImage>;
   reactionStyle: ReactionStyleName;
   createdAt: string;
+  updatedAt?: string;
   isFeatured: boolean;
+  senderName?: string;
+  senderMessage?: string;
+  editToken?: string;
 }
 
 export interface FriendMessageBook {

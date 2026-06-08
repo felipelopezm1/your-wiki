@@ -18,6 +18,31 @@ export function HoloLightbox() {
     return () => window.removeEventListener("keydown", handler);
   }, [imageUrl, handleClose]);
 
+  const handleDownload = useCallback(async () => {
+    if (!imageUrl) return;
+
+    try {
+      const response = await fetch(imageUrl);
+      const blob = await response.blob();
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = `weeeeki-image-${Date.now()}.jpg`;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      URL.revokeObjectURL(url);
+    } catch {
+      const link = document.createElement("a");
+      link.href = imageUrl;
+      link.download = `weeeeki-image-${Date.now()}.jpg`;
+      link.target = "_blank";
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+    }
+  }, [imageUrl]);
+
   const handlePointerMove = useCallback((e: React.PointerEvent) => {
     const card = cardRef.current;
     if (!card) return;
@@ -115,6 +140,13 @@ export function HoloLightbox() {
             >
               <path d="M4 4l10 10M14 4L4 14" />
             </svg>
+          </button>
+
+          <button
+            onClick={handleDownload}
+            className="absolute top-6 right-20 z-20 flex h-10 items-center justify-center rounded-full bg-white/10 px-4 text-xs font-medium text-white backdrop-blur-sm transition-colors hover:bg-white/20"
+          >
+            Download
           </button>
         </motion.div>
       )}
