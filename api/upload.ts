@@ -13,6 +13,12 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       return res.status(400).json({ error: "Missing filename query parameter" });
     }
 
+    if (!process.env.BLOB_READ_WRITE_TOKEN) {
+      return res.status(503).json({
+        error: "Image upload is not configured. Photos will be compressed and embedded instead.",
+      });
+    }
+
     if (!req.body) {
       return res.status(400).json({ error: "Missing file body" });
     }

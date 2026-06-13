@@ -8,68 +8,13 @@ import { useAppStore } from "@/store/useAppStore";
 import type { BookEntry, CoverTheme, GalleryImage } from "@/types";
 import { COVER_THEMES } from "@/types";
 import { saveEditToken } from "@/lib/ownership";
+import {
+  assertPayloadFits,
+  prepareAvatarUrl,
+  prepareGalleryImage,
+  readApiError,
+} from "@/lib/imageUpload";
 import { cn } from "@/lib/utils/cn";
-
-async function uploadImage(file: File): Promise<string> {
-  const res = await fetch(`/api/upload?filename=${encodeURIComponent(file.name)}`, {
-    method: "POST",
-    body: file,
-  });
-  if (!res.ok) throw new Error("Upload failed");
-  const data = await res.json();
-  return data.url;
-}
-
-function compressImage(file: File, maxSize = 720, quality = 0.72): Promise<string> {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onerror = () => reject(new Error("Could not read image"));
-    reader.onload = () => {
-      const img = new Image();
-      img.onerror = () => reject(new Error("Could not load image"));
-      img.onload = () => {
-        const scale = Math.min(1, maxSize / Math.max(img.width, img.height));
-        const canvas = document.createElement("canvas");
-        canvas.width = Math.round(img.width * scale);
-        canvas.height = Math.round(img.height * scale);
-
-        const ctx = canvas.getContext("2d");
-        if (!ctx) {
-          reject(new Error("Could not process image"));
-          return;
-        }
-
-        ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
-        resolve(canvas.toDataURL("image/jpeg", quality));
-      };
-      img.src = String(reader.result);
-    };
-    reader.readAsDataURL(file);
-  });
-}
-
-function readImage(file: File): Promise<string> {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onerror = () => reject(new Error("Could not read image"));
-    reader.onload = () => resolve(String(reader.result));
-    reader.readAsDataURL(file);
-  });
-}
-
-function getImageAspect(file: File): Promise<"portrait" | "landscape"> {
-  return new Promise((resolve) => {
-    const reader = new FileReader();
-    reader.onerror = () => resolve("landscape");
-    reader.onload = () => {
-      const img = new Image();
-      img.onerror = () => resolve("landscape");
-      img.onload = () => resolve(img.height > img.width ? "portrait" : "landscape");
-      img.src = String(reader.result);
-    };
-    reader.readAsDataURL(file);
-  });
-}
 
 function galleryThumb(image: string | GalleryImage): string {
   return typeof image === "string" ? image : image.thumbnailUrl ?? image.url;
@@ -104,6 +49,7 @@ export function SubmissionForm({ editBook, editToken, onSaved }: SubmissionFormP
   );
   const [galleryFiles, setGalleryFiles] = useState<File[]>([]);
   const [status, setStatus] = useState<"idle" | "submitting" | "success" | "error">("idle");
+  const [submitPhase, setSubmitPhase] = useState<"idle" | "photos" | "sending">("idle");
   const [errorMsg, setErrorMsg] = useState("");
   const [savedBookId, setSavedBookId] = useState<string | null>(null);
 
@@ -124,53 +70,44 @@ export function SubmissionForm({ editBook, editToken, onSaved }: SubmissionFormP
     }
 
     setStatus("submitting");
+    setSubmitPhase("photos");
     setErrorMsg("");
 
     try {
       let avatarUrl: string | undefined;
       if (avatarFile) {
-        try {
-          avatarUrl = await uploadImage(avatarFile);
-        } catch {
-          avatarUrl = await readImage(avatarFile);
-        }
+        avatarUrl = await prepareAvatarUrl(avatarFile);
       } else if (isEdit) {
         avatarUrl = existingAvatar ?? "";
       }
 
       const newGalleryImages = await Promise.all(
-        galleryFiles.slice(0, remainingGallerySlots).map(async (file) => {
-          const aspect = await getImageAspect(file);
-          const thumbnailUrl = await compressImage(file, 640, 0.68);
-          try {
-            return { url: await uploadImage(file), thumbnailUrl, aspect };
-          } catch {
-            return { url: await readImage(file), thumbnailUrl, aspect };
-          }
-        }),
+        galleryFiles.slice(0, remainingGallerySlots).map((file) => prepareGalleryImage(file)),
       );
 
       const galleryImages = [...existingGallery, ...newGalleryImages].slice(0, 8);
+      const payload = {
+        contributorName: name,
+        title,
+        messageBody: message,
+        wikiUrl: wikiUrl.trim() || undefined,
+        coverTheme,
+        avatarUrl,
+        galleryImages,
+      };
+
+      assertPayloadFits(payload);
+      setSubmitPhase("sending");
 
       if (isEdit && editBook) {
         const res = await fetch(`/api/books?id=${encodeURIComponent(editBook.id)}`, {
           method: "PUT",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            editToken,
-            contributorName: name,
-            title,
-            messageBody: message,
-            wikiUrl: wikiUrl.trim() || undefined,
-            coverTheme,
-            avatarUrl,
-            galleryImages,
-          }),
+          body: JSON.stringify({ editToken, ...payload }),
         });
 
         if (!res.ok) {
-          const data = await res.json();
-          throw new Error(data.error || "Could not save changes");
+          throw new Error(await readApiError(res, "Could not save changes"));
         }
 
         const { book } = (await res.json()) as { book: BookEntry };
@@ -184,20 +121,11 @@ export function SubmissionForm({ editBook, editToken, onSaved }: SubmissionFormP
       const res = await fetch("/api/books", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          contributorName: name,
-          title,
-          messageBody: message,
-          wikiUrl: wikiUrl.trim() || undefined,
-          coverTheme,
-          avatarUrl,
-          galleryImages,
-        }),
+        body: JSON.stringify(payload),
       });
 
       if (!res.ok) {
-        const data = await res.json();
-        throw new Error(data.error || "Submission failed");
+        throw new Error(await readApiError(res, "Submission failed"));
       }
 
       const { book } = (await res.json()) as { book: BookEntry };
@@ -208,6 +136,8 @@ export function SubmissionForm({ editBook, editToken, onSaved }: SubmissionFormP
     } catch (err) {
       setErrorMsg(err instanceof Error ? err.message : "Something went wrong");
       setStatus("error");
+    } finally {
+      setSubmitPhase("idle");
     }
   };
 
@@ -430,8 +360,8 @@ export function SubmissionForm({ editBook, editToken, onSaved }: SubmissionFormP
         disabled={status === "submitting"}
       >
         {status === "submitting"
-          ? isEdit
-            ? "Saving..."
+          ? submitPhase === "photos"
+            ? "Preparing photos..."
             : "Sending..."
           : isEdit
             ? "Save changes"
