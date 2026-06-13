@@ -65,7 +65,7 @@ export function ImageUploader({
             isDragActive ? "border-accent bg-accent/5" : "hover:border-ink-faint",
           )}
         >
-          <input {...getInputProps()} />
+          <input {...getInputProps({ form: "" })} />
           <p className="text-xs text-ink-faint px-4 text-center">
             {isDragActive ? "Drop here" : "Click or drag an image"}
           </p>

@@ -5,6 +5,9 @@ const THUMB_MAX_PX = 480;
 /** Stay safely under Vercel's ~4.5 MB function payload limit */
 export const MAX_SUBMISSION_BYTES = 3_500_000;
 
+/** Blob storage is not configured on production — skip upload fetch entirely. */
+const USE_BLOB_UPLOAD = false;
+
 export function compressImage(
   file: File,
   maxSize = FULL_MAX_PX,
@@ -15,7 +18,12 @@ export function compressImage(
     reader.onerror = () => reject(new Error("Could not read image"));
     reader.onload = () => {
       const img = new Image();
-      img.onerror = () => reject(new Error("Could not load image"));
+      img.onerror = () =>
+        reject(
+          new Error(
+            "Could not load this photo. If it is HEIC/HEIF, try saving it as JPEG in Photos first.",
+          ),
+        );
       img.onload = () => {
         const scale = Math.min(1, maxSize / Math.max(img.width, img.height));
         const canvas = document.createElement("canvas");
@@ -38,13 +46,22 @@ export function compressImage(
 }
 
 async function uploadImage(file: File): Promise<string> {
-  const res = await fetch(`/api/upload?filename=${encodeURIComponent(file.name)}`, {
-    method: "POST",
-    body: file,
-  });
-  if (!res.ok) throw new Error("Upload failed");
-  const data = await res.json();
-  return data.url as string;
+  if (!USE_BLOB_UPLOAD) {
+    throw new Error("Upload not configured");
+  }
+
+  try {
+    const safeName = `photo-${Date.now()}.jpg`;
+    const res = await fetch(`/api/upload?filename=${encodeURIComponent(safeName)}`, {
+      method: "POST",
+      body: file,
+    });
+    if (!res.ok) throw new Error("Upload failed");
+    const data = await res.json();
+    return data.url as string;
+  } catch {
+    throw new Error("Upload failed");
+  }
 }
 
 export function getImageAspect(file: File): Promise<"portrait" | "landscape"> {
@@ -104,4 +121,36 @@ export async function readApiError(res: Response, fallback: string): Promise<str
     // non-JSON error bodies (e.g. Vercel 413 plain text)
   }
   return fallback;
+}
+
+/** Safari/iOS throws opaque DOMExceptions — map them to something helpful. */
+export function friendlySubmitError(err: unknown): string {
+  if (!(err instanceof Error)) return "Something went wrong. Please try again.";
+
+  const msg = err.message.toLowerCase();
+  if (
+    msg.includes("did not match the expected pattern") ||
+    msg.includes("network error") ||
+    msg.includes("load failed")
+  ) {
+    return "Couldn't send from this browser — often caused by photos. Try submitting your message first without images, then edit to add photos.";
+  }
+
+  return err.message;
+}
+
+export async function submitJson(
+  url: string,
+  payload: unknown,
+  method: "POST" | "PUT" = "POST",
+): Promise<Response> {
+  try {
+    return await fetch(url, {
+      method,
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    });
+  } catch (err) {
+    throw new Error(friendlySubmitError(err));
+  }
 }

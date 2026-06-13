@@ -10,9 +10,11 @@ import { COVER_THEMES } from "@/types";
 import { saveEditToken } from "@/lib/ownership";
 import {
   assertPayloadFits,
+  friendlySubmitError,
   prepareAvatarUrl,
   prepareGalleryImage,
   readApiError,
+  submitJson,
 } from "@/lib/imageUpload";
 import { cn } from "@/lib/utils/cn";
 
@@ -100,11 +102,11 @@ export function SubmissionForm({ editBook, editToken, onSaved }: SubmissionFormP
       setSubmitPhase("sending");
 
       if (isEdit && editBook) {
-        const res = await fetch(`/api/books?id=${encodeURIComponent(editBook.id)}`, {
-          method: "PUT",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ editToken, ...payload }),
-        });
+        const res = await submitJson(
+          `/api/books?id=${encodeURIComponent(editBook.id)}`,
+          { editToken, ...payload },
+          "PUT",
+        );
 
         if (!res.ok) {
           throw new Error(await readApiError(res, "Could not save changes"));
@@ -118,11 +120,7 @@ export function SubmissionForm({ editBook, editToken, onSaved }: SubmissionFormP
         return;
       }
 
-      const res = await fetch("/api/books", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload),
-      });
+      const res = await submitJson("/api/books", payload, "POST");
 
       if (!res.ok) {
         throw new Error(await readApiError(res, "Submission failed"));
@@ -134,7 +132,7 @@ export function SubmissionForm({ editBook, editToken, onSaved }: SubmissionFormP
       setSavedBookId(book.id);
       setStatus("success");
     } catch (err) {
-      setErrorMsg(err instanceof Error ? err.message : "Something went wrong");
+      setErrorMsg(friendlySubmitError(err));
       setStatus("error");
     } finally {
       setSubmitPhase("idle");
@@ -199,7 +197,7 @@ export function SubmissionForm({ editBook, editToken, onSaved }: SubmissionFormP
   }
 
   return (
-    <form onSubmit={handleSubmit} className="space-y-5">
+    <form onSubmit={handleSubmit} className="space-y-5" noValidate>
       <Input
         id="name"
         label="Your name"
@@ -242,6 +240,9 @@ export function SubmissionForm({ editBook, editToken, onSaved }: SubmissionFormP
         id="wikiUrl"
         label="Wikipedia article link (optional)"
         placeholder="https://en.wikipedia.org/wiki/Friendship"
+        type="text"
+        inputMode="url"
+        autoComplete="off"
         value={wikiUrl}
         onChange={(e) => setWikiUrl(e.target.value)}
       />
@@ -396,9 +397,10 @@ function GalleryUploader({
       <label className="flex min-h-28 cursor-pointer items-center justify-center rounded-lg border-2 border-dashed border-border px-4 py-4 text-center transition-colors hover:border-ink-faint">
         <input
           type="file"
-          accept="image/*"
+          accept="image/*,.heic,.heif"
           multiple
           className="sr-only"
+          form=""
           onChange={(e) => {
             const next = Array.from(e.target.files ?? []).slice(0, maxFiles);
             onChange(next);
